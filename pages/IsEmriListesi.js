@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Alert, Platform } from "react-native"; // Platform import edildi
 import api from "../lib/api";
 
 export default function IsEmriListesi({ onNavigate, onMessage }) {
@@ -14,9 +14,9 @@ export default function IsEmriListesi({ onNavigate, onMessage }) {
       const res = await api.get("/api/emirler");
       setEmirler(res.data);
     } catch (err) {
-      console.error("Veri alınamadı:", err);
+      console.error("Veri alınamadı:", err.response?.data || err.message);
+      onMessage(err.response?.data?.detail || err.message || "İş emirleri yüklenirken bir hata oluştu.", "error");
       setError("İş emirleri yüklenirken bir hata oluştu.");
-      onMessage("İş emirleri yüklenirken bir hata oluştu.", "error");
     } finally {
       setLoading(false);
     }
@@ -27,31 +27,47 @@ export default function IsEmriListesi({ onNavigate, onMessage }) {
   }, []);
 
   const handleSil = (id) => {
-    Alert.alert(
-      "İş Emri Silme",
-      "Bu iş emrini silmek istediğinizden emin misiniz?",
-      [
-        {
-          text: "İptal",
-          style: "cancel"
-        },
-        {
-          text: "Sil",
-          onPress: async () => {
-            try {
-              await api.delete(`/api/emirler/${id}`);
-              setEmirler(emirler.filter((e) => e.id !== id));
-              onMessage("İş emri başarıyla silindi!", "success");
-            } catch (err) {
-              console.error("Silme hatası:", err);
-              const errorMessage = err.response?.data?.detail || "Silme işlemi başarısız oldu.";
-              setError(errorMessage);
-              onMessage(errorMessage, "error");
-            }
-          }
+    // DÜZELTME BAŞLANGICI: Platforma özel onay mekanizması
+    const confirmDelete = () => {
+      // Silme işlemi
+      (async () => {
+        try {
+          await api.delete(`/api/emirler/${id}`);
+          setEmirler(emirler.filter((e) => e.id !== id));
+          onMessage("İş emri başarıyla silindi!", "success");
+        } catch (err) {
+          console.error("Silme hatası:", err.response?.data || err.message);
+          const errorMessage = err.response?.data?.detail || "Silme işlemi başarısız oldu.";
+          setError(errorMessage);
+          onMessage(errorMessage, "error");
         }
-      ]
-    );
+      })();
+    };
+
+    if (Platform.OS === 'web') {
+      // Web için window.confirm kullan
+      if (window.confirm("Bu iş emrini silmek istediğinizden emin misiniz?")) {
+        confirmDelete();
+      }
+    } else {
+      // Mobil için Alert.alert kullan
+      Alert.alert(
+        "İş Emri Silme",
+        "Bu iş emrini silmek istediğinizden emin misiniz?",
+        [
+          {
+            text: "İptal",
+            style: "cancel"
+          },
+          {
+            text: "Sil",
+            onPress: confirmDelete, // Onaylandığında silme işlemini çağır
+            style: "destructive"
+          }
+        ]
+      );
+    }
+    // DÜZELTME SONU
   };
 
   const getStatusLabel = (status) => {
@@ -125,7 +141,7 @@ export default function IsEmriListesi({ onNavigate, onMessage }) {
           <Text style={styles.emptySubtitle}>Başlamak için yukarıdan bir tane ekleyin.</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.listContainer}>
+        <ScrollView style={styles.scrollViewStyle} contentContainerStyle={styles.listContentContainer}>
           {emirler.map((emir) => (
             <Pressable
               key={emir.id}
@@ -169,13 +185,13 @@ export default function IsEmriListesi({ onNavigate, onMessage }) {
 
               <View style={styles.actionButtons}>
                 <Pressable
-                  onPress={() => onNavigate('IsEmriDuzenle', emir.id)}
+                  onPress={(e) => { e.stopPropagation(); onNavigate('IsEmriDuzenle', emir.id); }}
                   style={styles.editButton}
                 >
                   <Text style={styles.editButtonText}>Düzenle</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => handleSil(emir.id)}
+                  onPress={(e) => { e.stopPropagation(); handleSil(emir.id); }}
                   style={styles.deleteButton}
                 >
                   <Text style={styles.deleteButtonText}>Sil</Text>
@@ -232,6 +248,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 40,
     padding: 16,
@@ -257,6 +275,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 40,
     padding: 24,
@@ -281,8 +301,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     color: '#9CA3AF',
   },
-  listContainer: {
+  scrollViewStyle: { // YENİ STİL: ScrollView bileşeninin kendisi için
+    flex: 1,
+  },
+  listContentContainer: { // DÜZELTME: contentContainerStyle için yeni isim
     rowGap: 16, // gap-4
+    paddingBottom: 80, // En alttaki elemanların kesilmemesi için boşluk
   },
   listItem: {
     backgroundColor: '#fff',
@@ -409,4 +433,4 @@ const styles = StyleSheet.create({
   priorityNormal: { backgroundColor: '#FEF3C7', color: '#B45309' }, // bg-yellow-100 text-yellow-800
   priorityLow: { backgroundColor: '#D1FAE5', color: '#065F46' }, // bg-green-100 text-green-800
   priorityDefault: { backgroundColor: '#E5E7EB', color: '#4B5563' }, // bg-gray-100 text-gray-800
-  });
+});
